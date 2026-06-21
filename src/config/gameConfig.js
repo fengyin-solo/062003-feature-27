@@ -145,6 +145,14 @@ export const GAME_CONFIG = {
     trainingTogether: [4, 9],
     statGapCompetition: 18,
     initialRange: [-15, 25],
+    maxHistory: 5,
+    sources: {
+      training: { label: '共同训练', icon: '💪', positive: true },
+      dailyDrift: { label: '日常互动', icon: '💬', positive: null },
+      competition: { label: '实力差距', icon: '⚡', positive: false },
+    },
+    highlightThreshold: 70,       // 高亮显示阈值
+    criticalThreshold: -50,       // 危险关系阈值
   },
 
   // ── 随机事件 ──

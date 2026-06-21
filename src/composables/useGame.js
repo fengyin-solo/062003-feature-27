@@ -10,6 +10,8 @@ import {
   calcProfit,
   calcTraineeScore,
   getRelationship,
+  getDebutSuggestions,
+  getRelationshipHistory,
 } from '../utils/gameLogic'
 import { saveToSlot } from '../utils/storage'
 
@@ -112,6 +114,11 @@ export function useGame() {
     return getRelationship(state.value.relationships, idA, idB)
   }
 
+  function getRelHistory(idA, idB) {
+    if (!state.value) return []
+    return getRelationshipHistory(state.value, idA, idB)
+  }
+
   return {
     state,
     currentSlot,
@@ -131,7 +138,9 @@ export function useGame() {
     dismissRating,
     backToMenu,
     getRel,
+    getRelHistory,
     getRatingResults: () => (state.value ? getRatingResults(state.value) : []),
+    getDebutSuggestions: () => (state.value ? getDebutSuggestions(state.value) : []),
     calcTraineeScore,
     autoSave,
   }

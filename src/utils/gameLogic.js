@@ -18,6 +18,7 @@ export function createInitialGameState() {
     trainees,
     groups: [],
     relationships: initRelationships(trainees),
+    relationshipHistory: {},
     schedule: {},
     logs: [{ day: 1, text: '事务所成立！五位练习生已就位，三年征途正式开始。' }],
     pendingEvent: null,
@@ -142,8 +143,19 @@ export function processDay(state) {
   let fans = state.fans
   let totalExpenses = state.totalExpenses
   const relationships = { ...state.relationships }
+  const relationshipHistory = { ...state.relationshipHistory }
   const trainees = state.trainees.map((t) => ({ ...t, stats: { ...t.stats } }))
   const schedule = state.schedule
+
+  function recordRelChange(idA, idB, delta, source, day) {
+    if (delta === 0) return
+    const key = pairKey(idA, idB)
+    if (!relationshipHistory[key]) relationshipHistory[key] = []
+    relationshipHistory[key].push({ day, delta, source })
+    if (relationshipHistory[key].length > CFG.relationships.maxHistory) {
+      relationshipHistory[key] = relationshipHistory[key].slice(-CFG.relationships.maxHistory)
+    }
+  }
 
   const activityGroups = {}
   for (const [traineeId, activity] of Object.entries(schedule)) {
@@ -214,12 +226,9 @@ export function processDay(state) {
 
     for (const p of partners) {
       const cur = getRelationship(relationships, trainee.id, p.id)
-      setRelationship(
-        relationships,
-        trainee.id,
-        p.id,
-        cur + randInt(CFG.relationships.trainingTogether[0], CFG.relationships.trainingTogether[1])
-      )
+      const delta = randInt(CFG.relationships.trainingTogether[0], CFG.relationships.trainingTogether[1])
+      setRelationship(relationships, trainee.id, p.id, cur + delta)
+      recordRelChange(trainee.id, p.id, delta, CFG.relationships.sources.training, state.day)
     }
   }
 
@@ -231,13 +240,19 @@ export function processDay(state) {
 
       const key = pairKey(a.id, b.id)
       let rel = relationships[key] ?? 0
-      rel += randInt(CFG.relationships.dailyDrift[0], CFG.relationships.dailyDrift[1])
+      const driftDelta = randInt(CFG.relationships.dailyDrift[0], CFG.relationships.dailyDrift[1])
+      rel += driftDelta
       rel = clamp(rel, CFG.relationships.min, CFG.relationships.max)
+      if (driftDelta !== 0) {
+        recordRelChange(a.id, b.id, driftDelta, CFG.relationships.sources.dailyDrift, state.day)
+      }
 
       const maxStat = (t) => Math.max(...CFG.stats.map((s) => t.stats[s]))
       const gap = Math.abs(maxStat(a) - maxStat(b))
       if (gap >= CFG.relationships.statGapCompetition) {
-        rel -= randInt(2, 6)
+        const compDelta = -randInt(2, 6)
+        rel += compDelta
+        recordRelChange(a.id, b.id, compDelta, CFG.relationships.sources.competition, state.day)
         const weaker = maxStat(a) < maxStat(b) ? a : b
         weaker.stress = clamp(
           weaker.stress + randInt(CFG.relationships.competitionStress[0], CFG.relationships.competitionStress[1]),
@@ -319,6 +334,7 @@ export function processDay(state) {
     totalExpenses,
     trainees,
     relationships,
+    relationshipHistory,
     schedule: {},
     logs: [...state.logs, ...logs],
     pendingEvent,
@@ -554,4 +570,85 @@ export function getRatingResults(state) {
       canDebut: calcTraineeScore(t) >= CFG.rating.debutScoreThreshold,
     }))
     .sort((a, b) => b.score - a.score)
+}
+
+export function getDebutSuggestions(state) {
+  const available = getActiveTrainees(state).filter(
+    (t) => t.status === 'trainee' && calcTraineeScore(t) >= CFG.rating.debutScoreThreshold
+  )
+  if (available.length < CFG.rating.minGroupSize) return []
+
+  const CFG_REL = CFG.relationships
+  const suggestions = []
+
+  function getGroupSynergy(members) {
+    let totalRel = 0
+    let pairCount = 0
+    let minRel = Infinity
+    for (let i = 0; i < members.length; i++) {
+      for (let j = i + 1; j < members.length; j++) {
+        const rel = getRelationship(state.relationships, members[i].id, members[j].id)
+        totalRel += rel
+        if (rel < minRel) minRel = rel
+        pairCount++
+      }
+    }
+    return { avg: totalRel / pairCount, min: minRel, total: totalRel }
+  }
+
+  function getGroupAvgScore(members) {
+    return members.reduce((s, m) => s + calcTraineeScore(m), 0) / members.length
+  }
+
+  function generateCombinations(arr, size) {
+    const result = []
+    function combo(start, current) {
+      if (current.length === size) {
+        result.push([...current])
+        return
+      }
+      for (let i = start; i < arr.length; i++) {
+        current.push(arr[i])
+        combo(i + 1, current)
+        current.pop()
+      }
+    }
+    combo(0, [])
+    return result
+  }
+
+  for (let size = CFG.rating.minGroupSize; size <= Math.min(CFG.rating.maxGroupSize, available.length); size++) {
+    const combos = generateCombinations(available, size)
+    for (const combo of combos) {
+      const synergy = getGroupSynergy(combo)
+      const avgScore = getGroupAvgScore(combo)
+      let grade = 'C'
+      if (synergy.avg >= CFG_REL.synergyThreshold && synergy.min >= 0) grade = 'S'
+      else if (synergy.avg >= CFG_REL.synergyThreshold * 0.6 && synergy.min >= CFG_REL.competitionThreshold) grade = 'A'
+      else if (synergy.avg >= 0 && synergy.min >= CFG_REL.competitionThreshold) grade = 'B'
+
+      suggestions.push({
+        members: combo.map((m) => ({ id: m.id, name: m.name, score: calcTraineeScore(m) })),
+        size,
+        avgScore: Math.round(avgScore),
+        synergyAvg: Math.round(synergy.avg),
+        synergyMin: Math.round(synergy.min),
+        grade,
+      })
+    }
+  }
+
+  return suggestions
+    .sort((a, b) => {
+      const gradeOrder = { S: 0, A: 1, B: 2, C: 3 }
+      if (gradeOrder[a.grade] !== gradeOrder[b.grade]) return gradeOrder[a.grade] - gradeOrder[b.grade]
+      if (b.synergyAvg !== a.synergyAvg) return b.synergyAvg - a.synergyAvg
+      return b.avgScore - a.avgScore
+    })
+    .slice(0, 5)
+}
+
+export function getRelationshipHistory(state, idA, idB) {
+  const key = pairKey(idA, idB)
+  return state.relationshipHistory?.[key] || []
 }

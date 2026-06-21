@@ -17,6 +17,8 @@
     :theme="theme"
     :can-end-day="canEndDay()"
     :rating-results="getRatingResults()"
+    :debut-suggestions="getDebutSuggestions()"
+    :get-rel-history="getRelHistory"
     :calc-score="calcTraineeScore"
     @back="backToMenu"
     @toggle-theme="toggleTheme"
@@ -59,6 +61,8 @@ const {
   dismissRating,
   backToMenu,
   getRatingResults,
+  getDebutSuggestions,
+  getRelHistory,
   calcTraineeScore,
 } = useGame()
 

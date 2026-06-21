@@ -43,6 +43,10 @@
         <RelationshipPanel
           :trainees="state.trainees"
           :relationships="state.relationships"
+          :relationship-history="state.relationshipHistory"
+          :debut-suggestions="debutSuggestions"
+          :get-rel-history="getRelHistory"
+          @quick-debut="$emit('debut', $event, '')"
         />
       </aside>
     </div>
@@ -100,6 +104,8 @@ const props = defineProps({
   theme: String,
   canEndDay: Boolean,
   ratingResults: Array,
+  debutSuggestions: Array,
+  getRelHistory: Function,
   calcScore: Function,
 })
 
@@ -113,6 +119,7 @@ const emit = defineEmits([
   'debut',
   'resolve-poaching',
   'release-single',
+  'quick-debut',
 ])
 
 const showDebut = ref(false)
